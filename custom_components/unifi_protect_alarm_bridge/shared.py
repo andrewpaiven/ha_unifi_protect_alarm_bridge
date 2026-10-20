@@ -50,8 +50,11 @@ class SharedProtectClient:
             or not hasattr(entry, "runtime_data")
         ):
             raise CannotConnect("The existing Protect integration is not loaded")
-        api = entry.runtime_data.api
-        if api.is_public_only or not api.is_authenticated():
+        api = getattr(entry.runtime_data, "api", None)
+        if api is None:
+            raise CannotConnect("The existing Protect runtime is not available")
+        # Reject API-key-only connections when exposed by the source client.
+        if getattr(api, "is_public_only", False) or not api.is_authenticated():
             raise CannotConnect("The existing Protect session is not authenticated")
         return api
 

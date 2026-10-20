@@ -4,10 +4,10 @@ This is an independently maintained MIT-licensed fork of
 [violuke/ha_unifi_protect_alarm_bridge](https://github.com/violuke/ha_unifi_protect_alarm_bridge), based on v1.0.1.
 The original author is not responsible for these changes.
 
-- When an official UniFi Protect integration exists, setup reuses its current
+- When an official UniFi Protect integration exists, setup offers to reuse its current
   authenticated session. No password is copied, and the account's permissions
   are not expanded. This mode polls every 15 seconds and has no separate websocket.
-- Dedicated-account setup remains available when no existing Protect entry exists.
+- Dedicated-account setup remains available as a separate choice.
   HTTPS requires a trusted certificate or an exact SHA-256 certificate pin.
 - The panel supports mapped Away, Home and Night modes and explicit Disarm.
   **Select a new mode directly.** The panel disarms other active profiles,

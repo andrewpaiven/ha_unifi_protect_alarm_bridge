@@ -238,9 +238,24 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask for the console and a Super Admin account."""
-        if self.hass.config_entries.async_entries("unifiprotect"):
-            return await self.async_step_existing(user_input)
+        """Offer session reuse while retaining dedicated-account setup."""
+        if user_input is None and self.hass.config_entries.async_entries(
+            "unifiprotect"
+        ):
+            return self.async_show_menu(
+                step_id="user", menu_options=["existing", "manual"]
+            )
+        return await self._async_step_account(user_input, "user")
+
+    async def async_step_manual(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure a dedicated account even when Protect is already installed."""
+        return await self._async_step_account(user_input, "manual")
+
+    async def _async_step_account(
+        self, user_input: dict[str, Any] | None, step_id: str
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
@@ -276,7 +291,7 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
                     return self._async_create({CONF_PROFILE_AWAY: profiles[0].id})
                 return await self.async_step_profiles()
         return self.async_show_form(
-            step_id="user",
+            step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(
                 STEP_USER_SCHEMA,
                 {k: v for k, v in (user_input or {}).items() if k != CONF_PASSWORD},
@@ -284,7 +299,9 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_existing(self, user_input=None) -> ConfigFlowResult:
+    async def async_step_existing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Reuse an existing session without reading its stored credentials."""
         sources = self.hass.config_entries.async_entries("unifiprotect")
         if not sources:
@@ -330,10 +347,14 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
                 if len(profiles) == 1:
                     return self._async_create({CONF_PROFILE_AWAY: profiles[0].id})
                 return await self.async_step_profiles()
+        suggested = dict(user_input or {})
+        if user_input is None and self.source == "reconfigure":
+            suggested = dict(self._get_reconfigure_entry().data)
         schema = vol.Schema(
             {
                 vol.Required(
-                    CONF_SOURCE_ENTRY_ID, default=sources[0].entry_id
+                    CONF_SOURCE_ENTRY_ID,
+                    default=suggested.get(CONF_SOURCE_ENTRY_ID, sources[0].entry_id),
                 ): SelectSelector(
                     SelectSelectorConfig(
                         options=[
@@ -346,7 +367,9 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(
-            step_id="existing", data_schema=schema, errors=errors
+            step_id="existing",
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
+            errors=errors,
         )
 
     async def async_step_profiles(
