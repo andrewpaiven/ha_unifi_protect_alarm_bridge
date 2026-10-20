@@ -10,8 +10,10 @@ The original author is not responsible for these changes.
 - Dedicated-account setup remains available when no existing Protect entry exists.
   HTTPS requires a trusted certificate or an exact SHA-256 certificate pin.
 - The panel supports mapped Away, Home and Night modes and explicit Disarm.
-  **Disarm first before changing modes.** There is no automatic disarm-then-arm
-  sequence and no automatic re-arming after a failed request.
+  **Select a new mode directly.** The panel disarms other active profiles,
+  confirms their status, then arms the selected profile. There is a brief
+  disarmed interval, followed by the new profile's configured exit delay.
+  Failed switches show an error; there is no automatic retry or rollback.
 - Every control decision starts with a fresh, verified Global-mode profile read.
   Unknown state blocks arming. A disarm request reaches every discovered profile
   even when the last read said it was disarmed. Failed requests are surfaced;
@@ -93,7 +95,7 @@ You can change the mapping later under the integration's **Configure** button.
 
 - **Arming from HA respects the profile's exit delay.** The panel shows
   `arming` until Protect reports `armed`.
-- **Changing modes requires an explicit disarm first. Selecting another mode never automatically disarms the current one.**
+- **Changing modes automatically disarms other active profiles, confirms they are disarmed, then arms the selected mode.** If the switch fails, the previous mode may already be disarmed; check the reported state before retrying. A triggered alarm still requires explicit Disarm before arming again.
 - **Disarm refreshes the profile list and sends disarm to every profile, including those last reported as disarmed.**
 - **External changes appear on the next poll (normally within 15 seconds in
   session reuse mode), or through the dedicated mode's websocket.** If a profile you haven't mapped is armed, the panel shows

@@ -44,7 +44,9 @@ async def test_rejected_breached_target_never_disarms_another_profile(
     mock_client.async_disarm.assert_not_awaited()
 
 
-async def test_failed_mode_switch_preserves_existing_protection(hass, mock_client):
+async def test_failed_mode_switch_reports_possible_disarm_without_retry(
+    hass, mock_client
+):
     mock_client.async_get_profiles.return_value = [
         make_profile(),
         make_profile(profile_id=HOME_ID, state="armed"),
@@ -54,12 +56,22 @@ async def test_failed_mode_switch_preserves_existing_protection(hass, mock_clien
         hass,
         mock_config_entry({CONF_PROFILE_AWAY: AWAY_ID, CONF_PROFILE_HOME: HOME_ID}),
     )
+
+    async def disarm(pid):
+        mock_client.async_get_profiles.return_value = [
+            make_profile(),
+            make_profile(profile_id=HOME_ID),
+        ]
+        return make_profile(profile_id=pid)
+
+    mock_client.async_disarm.side_effect = disarm
     with pytest.raises(HomeAssistantError) as err:
         await call(hass, "alarm_arm_away")
-    assert err.value.translation_key == "mode_change_requires_disarm"
-    mock_client.async_arm.assert_not_awaited()
-    mock_client.async_disarm.assert_not_awaited()
-    assert hass.states.get(ENTITY_ID).state == "armed_home"
+    assert err.value.translation_key == "mode_switch_failed"
+    mock_client.async_arm.assert_awaited_once_with(AWAY_ID)
+    mock_client.async_disarm.assert_awaited_once_with(HOME_ID)
+    await hass.async_block_till_done()
+    assert hass.states.get(ENTITY_ID).state == "disarmed"
 
 
 async def test_disarm_refreshes_after_missed_external_arm(hass, mock_client):

@@ -192,14 +192,14 @@ class UniFiAlarmPanel(
             await self.coordinator.async_require_fresh_profiles()
             await self._async_arm_from_fresh_state(mode)
 
-    async def _async_arm_from_fresh_state(self, mode: str) -> None:
+    def _validated_arm_target(self, mode: str) -> ArmProfile:
         profile_id = self._mode_profiles.get(mode)
         target = self._profiles.get(profile_id) if profile_id else None
         if target is None:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="profile_missing"
             )
-        if target.state == STATE_BREACHED:
+        if any(p.state == STATE_BREACHED for p in self._profiles.values()):
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="disarm_first"
             )
@@ -207,13 +207,40 @@ class UniFiAlarmPanel(
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="status_unavailable"
             )
-        if any(
-            p.id != target.id and p.state != STATE_DISARMED
+        return target
+
+    async def _async_arm_from_fresh_state(self, mode: str) -> None:
+        target = self._validated_arm_target(mode)
+        other_active = [
+            p.id
             for p in self._profiles.values()
-        ):
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="mode_change_requires_disarm"
-            )
+            if p.id != target.id and p.state != STATE_DISARMED
+        ]
+        if other_active:
+            try:
+                for profile_id in other_active:
+                    self._validated_arm_target(mode)
+                    await self.coordinator.async_disarm_profile(profile_id)
+                # Confirm the transition with a full read. An action reply alone
+                # may have raced an external arm, profile deletion or push.
+                await self.coordinator.async_require_fresh_profiles()
+                target = self._validated_arm_target(mode)
+                if any(
+                    p.id != target.id and p.state != STATE_DISARMED
+                    for p in self._profiles.values()
+                ):
+                    raise HomeAssistantError("Another profile is still active")
+                if target.state == STATE_DISARMED:
+                    await self.coordinator.async_arm_profile(target.id)
+            except HomeAssistantError as err:
+                # Do not retry writes or re-arm the old profile: the outcome of
+                # a failed request may be unknown, or someone changed it outside HA.
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="mode_switch_failed",
+                    translation_placeholders={"profile": target.title},
+                ) from err
+            return
         if target.state != STATE_DISARMED:
             return  # already arming/armed: a second press does nothing
         await self.coordinator.async_arm_profile(target.id)

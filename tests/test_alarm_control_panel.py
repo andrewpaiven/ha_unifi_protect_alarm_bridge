@@ -169,20 +169,34 @@ async def test_arm_while_target_is_breached_raises_disarm_first(
     mock_client.async_arm.assert_not_awaited()
 
 
-async def test_arm_preserves_other_active_profiles(hass, mock_client) -> None:
+async def test_arm_confirms_disarm_before_switching(hass, mock_client) -> None:
     mock_client.async_get_profiles.return_value = [
         make_profile(),
         make_profile(profile_id=HOME_ID, state="armed"),
     ]
     await setup_entry(hass, mock_config_entry(TWO_MODES))
 
-    with pytest.raises(HomeAssistantError) as err:
-        await _call(hass, "alarm_arm_away")
+    calls = []
 
-    assert err.value.translation_key == "mode_change_requires_disarm"
-    mock_client.async_disarm.assert_not_awaited()
-    mock_client.async_arm.assert_not_awaited()
-    assert hass.states.get(ENTITY_ID).state == "armed_home"
+    async def disarm(pid):
+        calls.append(("disarm", pid))
+        mock_client.async_get_profiles.return_value = [
+            make_profile(),
+            make_profile(profile_id=HOME_ID),
+        ]
+        return make_profile(profile_id=pid)
+
+    async def arm(pid):
+        calls.append(("arm", pid))
+        assert mock_client.async_get_profiles.await_count == 3
+        return make_profile(profile_id=pid, state="arming")
+
+    mock_client.async_disarm.side_effect = disarm
+    mock_client.async_arm.side_effect = arm
+    await _call(hass, "alarm_arm_away")
+
+    assert calls == [("disarm", HOME_ID), ("arm", AWAY_ID)]
+    assert hass.states.get(ENTITY_ID).state == "arming"
 
 
 async def test_arm_missing_profile_raises(hass, mock_client) -> None:
