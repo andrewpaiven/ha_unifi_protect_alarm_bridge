@@ -173,6 +173,22 @@ async def test_rate_limit_backoff_applies_to_independent_timer(hass, mock_client
         poll.assert_not_called()
 
 
+async def test_unchanged_profiles_still_publish_poll_freshness(
+    hass, mock_client, freezer
+):
+    entry = mock_config_entry()
+    await setup_entry(hass, entry)
+    before = hass.states.get(ENTITY_ID)
+    freezer.tick(timedelta(seconds=15))
+    await entry.runtime_data.async_refresh()
+    after = hass.states.get(ENTITY_ID)
+    assert after.state == before.state == "disarmed"
+    assert (
+        after.attributes["last_successful_poll"]
+        != before.attributes["last_successful_poll"]
+    )
+
+
 async def test_concurrent_duplicate_arm_waits_for_fresh_state(hass, mock_client):
     entry = mock_config_entry()
     await setup_entry(hass, entry)
