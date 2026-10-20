@@ -201,6 +201,7 @@ class ProtectUpdatesListener:
             self._client.ws_url(),
             headers={"X-CSRF-Token": self._client.csrf_token or ""},
             heartbeat=self._heartbeat,
+            ssl=self._client.ssl,
         )
 
     def _handle_binary(self, data: bytes) -> None:

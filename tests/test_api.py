@@ -235,7 +235,13 @@ async def test_cannot_connect(http_session, socket_enabled) -> None:
 
 
 async def test_ws_url_follows_scheme(http_session) -> None:
-    secure = UniFiAlarmClient(http_session, "192.0.2.1", USERNAME, PASSWORD)
+    secure = UniFiAlarmClient(
+        http_session,
+        "192.0.2.1",
+        USERNAME,
+        PASSWORD,
+        ssl_context=aiohttp.Fingerprint(bytes.fromhex("ab" * 32)),
+    )
     plain = UniFiAlarmClient(
         http_session, "127.0.0.1:1", USERNAME, PASSWORD, scheme="http"
     )

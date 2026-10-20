@@ -22,6 +22,7 @@ from custom_components.unifi_protect_alarm_bridge.api import (
 )
 from custom_components.unifi_protect_alarm_bridge.config_flow import normalize_host
 from custom_components.unifi_protect_alarm_bridge.const import (
+    CONF_CERTIFICATE_FINGERPRINT,
     CONF_PROFILE_AWAY,
     CONF_PROFILE_HOME,
     DOMAIN,
@@ -44,7 +45,6 @@ USER_INPUT = {
     CONF_HOST: HOST,
     CONF_USERNAME: USERNAME,
     CONF_PASSWORD: PASSWORD,
-    CONF_VERIFY_SSL: False,
 }
 
 
@@ -81,7 +81,7 @@ async def _start_user_flow(hass: HomeAssistant) -> dict:
         ("192.0.2.1", "192.0.2.1"),
         ("  192.0.2.1  ", "192.0.2.1"),
         ("https://192.0.2.1/", "192.0.2.1"),
-        ("https://192.0.2.1:8443/protect/dashboard", "192.0.2.1:8443"),
+        ("https://192.0.2.1:8443/", "192.0.2.1:8443"),
         ("console.local", "console.local"),
         ("fe80::1", "[fe80::1]"),
         ("[fe80::1]:443", "[fe80::1]:443"),
@@ -101,7 +101,11 @@ async def test_single_profile_creates_entry(hass, flow_client) -> None:
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Test Console"
-    assert result["data"] == ENTRY_DATA
+    assert result["data"] == {
+        **ENTRY_DATA,
+        CONF_VERIFY_SSL: True,
+        CONF_CERTIFICATE_FINGERPRINT: "",
+    }
     assert result["options"] == {CONF_PROFILE_AWAY: AWAY_ID}
     assert result["result"].unique_id == UNIQUE_ID
 
@@ -258,7 +262,7 @@ async def test_reconfigure(hass, flow_client) -> None:
     assert result["step_id"] == "reconfigure"
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: "fe80::1", CONF_VERIFY_SSL: True}
+        result["flow_id"], {CONF_HOST: "fe80::1"}
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
@@ -274,14 +278,14 @@ async def test_reconfigure_to_a_different_console_aborts(hass, flow_client) -> N
     )
     result = await entry.start_reconfigure_flow(hass)
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: "192.0.2.50", CONF_VERIFY_SSL: False}
+        result["flow_id"], {CONF_HOST: "192.0.2.50"}
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "unique_id_mismatch"
     assert entry.data[CONF_HOST] == HOST
 
 
-async def test_unknown_global_mode_flag_does_not_block_setup(hass, flow_client) -> None:
+async def test_unknown_global_mode_flag_blocks_setup(hass, flow_client) -> None:
     flow_client.async_get_console_info.return_value = replace(
         CONSOLE, external_alarm_manager=None
     )
@@ -289,4 +293,5 @@ async def test_unknown_global_mode_flag_does_not_block_setup(hass, flow_client) 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], USER_INPUT
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "global_mode_off"}

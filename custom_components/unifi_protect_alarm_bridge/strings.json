@@ -1,0 +1,162 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to your UniFi console",
+        "description": "Use a dedicated local-only UniFi OS account with the Super Admin role and no two-factor authentication. Alarm Manager is not available to custom roles.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "certificate_fingerprint": "Trusted certificate SHA-256 (optional)"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the UniFi console running Protect.",
+          "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
+        }
+      },
+      "profiles": {
+        "title": "Map arm modes to Protect profiles",
+        "description": "Choose which Alarm Manager profile each Home Assistant arm mode arms. Arm home and arm night are optional.",
+        "data": {
+          "profile_away": "Arm away",
+          "profile_home": "Arm home",
+          "profile_night": "Arm night"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with {host}",
+        "description": "The console rejected the stored credentials. Enter the current username and password of the Super Admin account.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure connection",
+        "description": "Change how Home Assistant reaches the console. It must be the same console as before.",
+        "data": {
+          "host": "Host",
+          "certificate_fingerprint": "Trusted certificate SHA-256 (optional)"
+        },
+        "data_description": {
+          "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
+        }
+      },
+      "existing": {
+        "title": "Use your existing Protect connection",
+        "description": "Reuse the official UniFi Protect integration's authenticated session. No second password is stored. Alarm controls use that account's existing permissions.",
+        "data": {
+          "source_entry_id": "Protect connection",
+          "certificate_fingerprint": "Trusted certificate SHA-256 (optional)"
+        },
+        "data_description": {
+          "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password.",
+      "mfa_not_supported": "This account uses two-factor authentication. Use a local-only account without two-factor authentication.",
+      "rate_limited": "Too many failed logins. Wait a few minutes and try again.",
+      "cannot_connect": "Could not connect to the console.",
+      "not_super_admin": "This account needs the Super Admin role. Alarm Manager is not available to custom roles.",
+      "global_mode_off": "Protect's Alarm Manager is not in Global mode on this console.",
+      "no_profiles": "No arm profiles found. Create one in Protect's Alarm Manager first.",
+      "duplicate_profile": "Each profile can only be used for one arm mode.",
+      "unknown": "Unexpected error. Check the Home Assistant logs.",
+      "invalid_host": "Enter an HTTPS hostname or IP address without credentials, paths or query parameters.",
+      "invalid_fingerprint": "Enter a 64-character SHA-256 certificate fingerprint."
+    },
+    "abort": {
+      "already_configured": "This console is already configured.",
+      "already_in_progress": "Setup for this console is already in progress.",
+      "reauth_successful": "Re-authentication was successful.",
+      "reconfigure_successful": "Reconfiguration was successful.",
+      "unique_id_mismatch": "These details belong to a different console than the one originally configured.",
+      "source_missing": "Set up the official UniFi Protect connection first.",
+      "repair_source": "Restore the existing UniFi Protect connection, then reload this integration."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Arm mode mapping",
+        "description": "Choose which Alarm Manager profile each Home Assistant arm mode arms. Arm home and arm night are optional.",
+        "data": {
+          "profile_away": "Arm away",
+          "profile_home": "Arm home",
+          "profile_night": "Arm night"
+        }
+      }
+    },
+    "error": {
+      "duplicate_profile": "Each profile can only be used for one arm mode."
+    },
+    "abort": {
+      "not_loaded": "The integration must be running to change the arm mode mapping.",
+      "no_profiles": "No arm profiles found on the console. Create one in Protect's Alarm Manager first."
+    }
+  },
+  "issues": {
+    "not_super_admin": {
+      "title": "UniFi alarm account is not a Super Admin",
+      "description": "The console refused access to Alarm Manager. Give the account used by UniFi Protect Alarm Bridge the Super Admin role again; custom roles cannot use Alarm Manager. This issue clears itself on the next successful poll."
+    },
+    "api_changed": {
+      "title": "UniFi Alarm Manager returned unexpected data",
+      "description": "The console (Protect {protect_version}) returned data this integration does not understand, probably after a firmware update. Please report it at {issue_url} and attach a diagnostics download."
+    },
+    "global_mode_off": {
+      "title": "Protect Alarm Manager is not in Global mode",
+      "description": "This integration controls Protect's Global Alarm Manager, but the console reports that Global mode is off. Switch Alarm Manager back to Global mode in Protect, or use the official UniFi Protect integration while in Local mode."
+    },
+    "push_unavailable": {
+      "title": "Instant UniFi alarm updates are unavailable",
+      "description": "The Protect update websocket has been disconnected for over an hour, so the alarm state is only refreshed every 10 seconds. This usually follows a firmware change. Please report it at {issue_url} if it persists."
+    },
+    "profile_missing": {
+      "title": "Mapped UniFi arm profile no longer exists",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Choose arm profiles again",
+            "description": "A Protect arm profile used by Home Assistant was deleted or replaced. Choose which profile each arm mode should use.",
+            "data": {
+              "profile_away": "Arm away",
+              "profile_home": "Arm home",
+              "profile_night": "Arm night"
+            }
+          }
+        },
+        "error": {
+          "duplicate_profile": "Each profile can only be used for one arm mode."
+        },
+        "abort": {
+          "not_loaded": "The integration must be running to fix this.",
+          "no_profiles": "No arm profiles found on the console. Create one in Protect's Alarm Manager first."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "profile_missing": {
+      "message": "The Protect arm profile mapped to this arm mode no longer exists. Fix it under Settings â†’ Repairs."
+    },
+    "arm_failed": {
+      "message": "Failed to arm {profile}: {error}"
+    },
+    "disarm_failed": {
+      "message": "Failed to disarm {profile}: {error}"
+    },
+    "disarm_first": {
+      "message": "The alarm is triggered. Disarm it before arming again."
+    },
+    "mode_change_requires_disarm": {
+      "message": "Another alarm mode is active. Disarm explicitly before selecting a different mode."
+    },
+    "status_unavailable": {
+      "message": "Cannot verify the current alarm status. No command was sent. Restore the Protect connection and retry."
+    }
+  }
+}

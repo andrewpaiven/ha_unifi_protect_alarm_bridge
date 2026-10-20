@@ -8,11 +8,11 @@
           "host": "Host",
           "username": "Username",
           "password": "Password",
-          "verify_ssl": "Verify SSL certificate"
+          "certificate_fingerprint": "Trusted certificate SHA-256 (optional)"
         },
         "data_description": {
           "host": "IP address or hostname of the UniFi console running Protect.",
-          "verify_ssl": "Leave this off unless the console has a certificate Home Assistant trusts."
+          "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
         }
       },
       "profiles": {
@@ -37,7 +37,21 @@
         "description": "Change how Home Assistant reaches the console. It must be the same console as before.",
         "data": {
           "host": "Host",
-          "verify_ssl": "Verify SSL certificate"
+          "certificate_fingerprint": "Trusted certificate SHA-256 (optional)"
+        },
+        "data_description": {
+          "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
+        }
+      },
+      "existing": {
+        "title": "Use your existing Protect connection",
+        "description": "Reuse the official UniFi Protect integration's authenticated session. No second password is stored. Alarm controls use that account's existing permissions.",
+        "data": {
+          "source_entry_id": "Protect connection",
+          "certificate_fingerprint": "Trusted certificate SHA-256 (optional)"
+        },
+        "data_description": {
+          "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
         }
       }
     },
@@ -50,14 +64,18 @@
       "global_mode_off": "Protect's Alarm Manager is not in Global mode on this console.",
       "no_profiles": "No arm profiles found. Create one in Protect's Alarm Manager first.",
       "duplicate_profile": "Each profile can only be used for one arm mode.",
-      "unknown": "Unexpected error. Check the Home Assistant logs."
+      "unknown": "Unexpected error. Check the Home Assistant logs.",
+      "invalid_host": "Enter an HTTPS hostname or IP address without credentials, paths or query parameters.",
+      "invalid_fingerprint": "Enter a 64-character SHA-256 certificate fingerprint."
     },
     "abort": {
       "already_configured": "This console is already configured.",
       "already_in_progress": "Setup for this console is already in progress.",
       "reauth_successful": "Re-authentication was successful.",
       "reconfigure_successful": "Reconfiguration was successful.",
-      "unique_id_mismatch": "These details belong to a different console than the one originally configured."
+      "unique_id_mismatch": "These details belong to a different console than the one originally configured.",
+      "source_missing": "Set up the official UniFi Protect connection first.",
+      "repair_source": "Restore the existing UniFi Protect connection, then reload this integration."
     }
   },
   "options": {
@@ -123,7 +141,7 @@
   },
   "exceptions": {
     "profile_missing": {
-      "message": "The Protect arm profile mapped to this arm mode no longer exists. Fix it under Settings → Repairs."
+      "message": "The Protect arm profile mapped to this arm mode no longer exists. Fix it under Settings â†’ Repairs."
     },
     "arm_failed": {
       "message": "Failed to arm {profile}: {error}"
@@ -133,6 +151,12 @@
     },
     "disarm_first": {
       "message": "The alarm is triggered. Disarm it before arming again."
+    },
+    "mode_change_requires_disarm": {
+      "message": "Another alarm mode is active. Disarm explicitly before selecting a different mode."
+    },
+    "status_unavailable": {
+      "message": "Cannot verify the current alarm status. No command was sent. Restore the Protect connection and retry."
     }
   }
 }
