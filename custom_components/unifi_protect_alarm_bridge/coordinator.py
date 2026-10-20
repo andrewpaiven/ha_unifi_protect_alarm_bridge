@@ -134,6 +134,7 @@ class UniFiAlarmCoordinator(DataUpdateCoordinator[dict[str, ArmProfile]]):
         # Stale-write guard: pushes and action responses stamp the profiles they
         # write, and a poll ignores any profile stamped after the poll started.
         self._write_seq = 0
+        self._last_poll_seq = 0
         self._written_seq: dict[str, int] = {}
         self._promotion_unsub: CALLBACK_TYPE | None = None
         self._overdue_counts: dict[str, int] = {}
@@ -181,6 +182,17 @@ class UniFiAlarmCoordinator(DataUpdateCoordinator[dict[str, ArmProfile]]):
             )
 
     async def _async_update_data(self) -> dict[str, ArmProfile]:
+        if (
+            self._poll_not_before
+            and (
+                remaining := (self._poll_not_before - dt_util.utcnow()).total_seconds()
+            )
+            > 0
+        ):
+            raise UpdateFailed(
+                "Protect is limiting alarm requests",
+                retry_after=max(1, int(remaining) + 1),
+            )
         seq_at_start = self._write_seq
         try:
             console = await self.client.async_get_console_info()
@@ -222,6 +234,12 @@ class UniFiAlarmCoordinator(DataUpdateCoordinator[dict[str, ArmProfile]]):
                 merged[profile.id] = current[profile.id]  # newer push/action wins
             else:
                 merged[profile.id] = profile
+        # A newly discovered profile may not exist in the in-flight snapshot.
+        for profile_id, profile in current.items():
+            if self._written_seq.get(profile_id, 0) > seq_at_start:
+                merged[profile_id] = profile
+        self._write_seq += 1
+        self._last_poll_seq = self._write_seq
         self.last_poll_success_at = dt_util.utcnow()
         self._check_profile_mapping(merged)
         self._check_push_issue()
@@ -336,7 +354,7 @@ class UniFiAlarmCoordinator(DataUpdateCoordinator[dict[str, ArmProfile]]):
 
     @callback
     def _apply_action_response(self, profile: ArmProfile, started_seq: int) -> None:
-        if self._written_seq.get(profile.id, 0) > started_seq:
+        if max(self._last_poll_seq, self._written_seq.get(profile.id, 0)) > started_seq:
             self.handle_resync()
             return
         self.handle_profile(profile)
@@ -360,6 +378,10 @@ class UniFiAlarmCoordinator(DataUpdateCoordinator[dict[str, ArmProfile]]):
         except UniFiAlarmError as err:
             self.last_update_success = False
             self.async_update_listeners()
+            if isinstance(err, RateLimited):
+                self._poll_not_before = dt_util.utcnow() + timedelta(
+                    seconds=RATE_LIMIT_RETRY_AFTER
+                )
             if isinstance(err, (AuthFailed, MfaRequired)):
                 self.config_entry.async_start_reauth(self.hass)
             else:

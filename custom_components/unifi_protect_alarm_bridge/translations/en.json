@@ -13,6 +13,10 @@
         "data_description": {
           "host": "IP address or hostname of the UniFi console running Protect.",
           "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
+        },
+        "menu_options": {
+          "existing": "Use an existing Protect connection",
+          "manual": "Use a dedicated account"
         }
       },
       "profiles": {
@@ -51,6 +55,20 @@
           "certificate_fingerprint": "Trusted certificate SHA-256 (optional)"
         },
         "data_description": {
+          "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
+        }
+      },
+      "manual": {
+        "title": "Connect to your UniFi console",
+        "description": "Use a dedicated local-only UniFi OS account with the Super Admin role and no two-factor authentication. Alarm Manager is not available to custom roles.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "certificate_fingerprint": "Trusted certificate SHA-256 (optional)"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the UniFi console running Protect.",
           "certificate_fingerprint": "For a self-signed console certificate, enter its independently verified SHA-256 fingerprint. Leave empty to use normal certificate verification."
         }
       }

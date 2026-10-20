@@ -232,6 +232,11 @@ async def test_existing_setup_has_no_password_field_or_saved_password(hass):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": "user"}
         )
+        assert result["type"] is FlowResultType.MENU
+        assert result["menu_options"] == ["existing", "manual"]
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "existing"}
+        )
         assert result["step_id"] == "existing"
         assert "password" not in repr(result["data_schema"])
         result = await hass.config_entries.flow.async_configure(
@@ -246,3 +251,55 @@ async def test_existing_setup_has_no_password_field_or_saved_password(hass):
             CONF_SOURCE_ENTRY_ID: source.entry_id,
             CONF_CERTIFICATE_FINGERPRINT: "ab" * 32,
         }
+
+
+async def test_older_source_api_without_public_only_flag(shared):
+    del shared.api.is_public_only
+    assert await shared.client.async_get_console_info() == CONSOLE
+
+
+async def test_source_runtime_not_ready_is_a_connection_error(shared):
+    shared.source.runtime_data = SimpleNamespace()
+    with pytest.raises(CannotConnect):
+        await shared.client.async_get_console_info()
+    shared.session.request.assert_not_called()
+
+
+async def test_dedicated_account_remains_available_with_an_existing_source(hass):
+    source = MockConfigEntry(domain="unifiprotect", title="Existing", data={})
+    source.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "manual"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "manual"
+    assert "password" in repr(result["data_schema"])
+
+
+async def test_shared_reconfigure_prefills_current_source_and_pin(hass):
+    for title in ("First console", "Selected console"):
+        source = MockConfigEntry(domain="unifiprotect", title=title, data={})
+        source.add_to_hass(hass)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Alarm",
+        unique_id=UNIQUE_ID,
+        data={
+            CONF_SOURCE_ENTRY_ID: source.entry_id,
+            CONF_CERTIFICATE_FINGERPRINT: "ab" * 32,
+        },
+        options={CONF_PROFILE_AWAY: AWAY_ID},
+    )
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "reconfigure", "entry_id": entry.entry_id}
+    )
+    assert result["step_id"] == "existing"
+    fields = {field.schema: field for field in result["data_schema"].schema}
+    assert fields[CONF_SOURCE_ENTRY_ID].default() == source.entry_id
+    assert (
+        fields[CONF_CERTIFICATE_FINGERPRINT].description["suggested_value"] == "ab" * 32
+    )
