@@ -7,6 +7,8 @@ from typing import Final
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 
 DOMAIN: Final = "unifi_protect_alarm_bridge"
+CONF_SOURCE_ENTRY_ID: Final = "source_entry_id"
+CONF_CERTIFICATE_FINGERPRINT: Final = "certificate_fingerprint"
 LOGGER = logging.getLogger(__package__)
 
 CONF_PROFILE_AWAY: Final = "profile_away"
@@ -23,6 +25,7 @@ STATE_BREACHED: Final = "breached"
 # Polling is only a safety net for the websocket, so the intervals are fixed.
 POLL_INTERVAL_PUSH_HEALTHY: Final = timedelta(seconds=60)
 POLL_INTERVAL_PUSH_DOWN: Final = timedelta(seconds=10)
+POLL_INTERVAL_SHARED: Final = timedelta(seconds=15)
 PUSH_UNAVAILABLE_AFTER: Final = timedelta(hours=1)
 # Poll delay after the console rate-limits logins (matches the websocket's max
 # backoff), so polling doesn't prolong the lockout.
@@ -46,13 +49,15 @@ ALL_ISSUES: Final = (
     ISSUE_PROFILE_MISSING,
 )
 ISSUE_TRACKER_URL: Final = (
-    "https://github.com/violuke/ha_unifi_protect_alarm_bridge/issues"
+    "https://github.com/andrewpaiven/ha_unifi_protect_alarm_bridge/issues"
 )
 
 # Keys removed from diagnostics and from logged API payloads. Profile titles and
 # console names can contain people's names or addresses. Session tokens and
 # cookies are also removed.
 REDACT_KEYS: Final = {
+    CONF_SOURCE_ENTRY_ID,
+    CONF_CERTIFICATE_FINGERPRINT,
     CONF_HOST,
     CONF_USERNAME,
     CONF_PASSWORD,

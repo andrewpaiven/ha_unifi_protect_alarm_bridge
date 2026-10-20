@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import re
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 from homeassistant.config_entries import (
@@ -26,6 +28,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
+from homeassistant.util.ssl import get_default_context
 import voluptuous as vol
 
 from .api import (
@@ -40,13 +43,16 @@ from .api import (
     UniFiAlarmClient,
 )
 from .const import (
+    CONF_CERTIFICATE_FINGERPRINT,
     CONF_PROFILE_AWAY,
     CONF_PROFILE_HOME,
     CONF_PROFILE_NIGHT,
+    CONF_SOURCE_ENTRY_ID,
     DOMAIN,
     LOGGER,
     PROFILE_OPTION_KEYS,
 )
+from .shared import SharedProtectClient
 
 _PASSWORD_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
@@ -55,7 +61,7 @@ STEP_USER_SCHEMA = vol.Schema(
         vol.Required(CONF_HOST): str,
         vol.Required(CONF_USERNAME): str,
         vol.Required(CONF_PASSWORD): _PASSWORD_SELECTOR,
-        vol.Required(CONF_VERIFY_SSL, default=False): bool,
+        vol.Optional(CONF_CERTIFICATE_FINGERPRINT): str,
     }
 )
 STEP_REAUTH_SCHEMA = vol.Schema(
@@ -67,20 +73,37 @@ STEP_REAUTH_SCHEMA = vol.Schema(
 STEP_RECONFIGURE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
-        vol.Required(CONF_VERIFY_SSL): bool,
+        vol.Optional(CONF_CERTIFICATE_FINGERPRINT): str,
     }
 )
 
 
 def normalize_host(raw: str) -> str:
-    """Reduce user input such as 'https://1.2.3.4/x' to a bare host[:port]."""
+    """Accept an HTTPS authority, never embedded credentials or a path."""
     value = raw.strip()
-    if "://" in value:
-        value = value.split("://", 1)[1]
-    value = value.split("/", 1)[0]
-    if value.count(":") > 1 and not value.startswith("["):
+    if "://" not in value and value.count(":") > 1 and not value.startswith("["):
         value = f"[{value}]"  # bare IPv6 literal
-    return value
+    url = urlsplit(value if "://" in value else f"https://{value}")
+    if (
+        url.scheme != "https"
+        or not url.hostname
+        or url.username is not None
+        or url.password is not None
+        or url.path not in ("", "/")
+        or url.query
+        or url.fragment
+        or any(c.isspace() for c in url.netloc)
+        or (url.port is not None and url.port < 1)
+    ):
+        raise CannotValidate("invalid_host")
+    return url.netloc.lower()
+
+
+def normalize_fingerprint(value: str) -> str:
+    fingerprint = re.sub(r"[:\s]", "", value).lower()
+    if fingerprint and not re.fullmatch(r"[a-f0-9]{64}", fingerprint):
+        raise CannotValidate("invalid_fingerprint")
+    return fingerprint
 
 
 def profiles_schema(
@@ -138,19 +161,34 @@ class CannotValidate(Exception):
 
 
 async def async_validate_connection(
-    hass: HomeAssistant, host: str, username: str, password: str, verify_ssl: bool
+    hass: HomeAssistant,
+    host: str,
+    username: str,
+    password: str,
+    verify_ssl: bool = True,
+    certificate_fingerprint: str | None = None,
 ) -> tuple[ConsoleInfo, list[ArmProfile]]:
     """Log in and check Global mode and Super Admin access, or raise CannotValidate."""
     session = async_create_clientsession(
         hass,
-        verify_ssl=verify_ssl,
+        verify_ssl=True,
         auto_cleanup=False,
         cookie_jar=aiohttp.CookieJar(unsafe=True),
     )
-    client = UniFiAlarmClient(session, host, username, password)
+    client = UniFiAlarmClient(
+        session,
+        host,
+        username,
+        password,
+        ssl_context=(
+            aiohttp.Fingerprint(bytes.fromhex(certificate_fingerprint))
+            if certificate_fingerprint
+            else get_default_context()
+        ),
+    )
     try:
         console = await client.async_get_console_info()
-        if console.external_alarm_manager is False:
+        if console.external_alarm_manager is not True:
             raise CannotValidate("global_mode_off")
         profiles = await client.async_get_profiles()
     except AuthFailed as err:
@@ -201,19 +239,31 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Ask for the console and a Super Admin account."""
+        if self.hass.config_entries.async_entries("unifiprotect"):
+            return await self.async_step_existing(user_input)
         errors: dict[str, str] = {}
         if user_input is not None:
-            data = {**user_input, CONF_HOST: normalize_host(user_input[CONF_HOST])}
             try:
+                data = {
+                    **user_input,
+                    CONF_HOST: normalize_host(user_input[CONF_HOST]),
+                    CONF_VERIFY_SSL: True,
+                    CONF_CERTIFICATE_FINGERPRINT: normalize_fingerprint(
+                        user_input.get(CONF_CERTIFICATE_FINGERPRINT, "")
+                    ),
+                }
                 console, profiles = await async_validate_connection(
                     self.hass,
                     data[CONF_HOST],
                     data[CONF_USERNAME],
                     data[CONF_PASSWORD],
                     data[CONF_VERIFY_SSL],
+                    data[CONF_CERTIFICATE_FINGERPRINT],
                 )
             except CannotValidate as err:
                 errors["base"] = err.error
+            except ValueError:
+                errors["base"] = "invalid_host"
             else:
                 await self.async_set_unique_id(format_mac(console.mac))
                 self._abort_if_unique_id_configured(
@@ -232,6 +282,71 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
                 {k: v for k, v in (user_input or {}).items() if k != CONF_PASSWORD},
             ),
             errors=errors,
+        )
+
+    async def async_step_existing(self, user_input=None) -> ConfigFlowResult:
+        """Reuse an existing session without reading its stored credentials."""
+        sources = self.hass.config_entries.async_entries("unifiprotect")
+        if not sources:
+            return self.async_abort(reason="source_missing")
+        errors = {}
+        if user_input is not None:
+            try:
+                data = {
+                    CONF_SOURCE_ENTRY_ID: user_input[CONF_SOURCE_ENTRY_ID],
+                    CONF_CERTIFICATE_FINGERPRINT: normalize_fingerprint(
+                        user_input.get(CONF_CERTIFICATE_FINGERPRINT, "")
+                    ),
+                }
+                client = SharedProtectClient(
+                    self.hass,
+                    data[CONF_SOURCE_ENTRY_ID],
+                    data[CONF_CERTIFICATE_FINGERPRINT],
+                )
+                console = await client.async_get_console_info()
+                if console.external_alarm_manager is not True:
+                    raise CannotValidate("global_mode_off")
+                profiles = await client.async_get_profiles()
+                if not profiles:
+                    raise CannotValidate("no_profiles")
+            except CannotValidate as err:
+                errors["base"] = err.error
+            except InsufficientPermissions:
+                errors["base"] = "not_super_admin"
+            except RateLimited:
+                errors["base"] = "rate_limited"
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except UnexpectedResponse:
+                errors["base"] = "unknown"
+            else:
+                await self.async_set_unique_id(format_mac(console.mac))
+                if self.source == "reconfigure":
+                    entry = self._get_reconfigure_entry()
+                    self._abort_if_unique_id_mismatch()
+                    return self.async_update_reload_and_abort(entry, data_updates=data)
+                self._abort_if_unique_id_configured()
+                self._data, self._title, self._profiles = data, console.name, profiles
+                if len(profiles) == 1:
+                    return self._async_create({CONF_PROFILE_AWAY: profiles[0].id})
+                return await self.async_step_profiles()
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_SOURCE_ENTRY_ID, default=sources[0].entry_id
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            {"value": e.entry_id, "label": e.title} for e in sources
+                        ],
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_CERTIFICATE_FINGERPRINT): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="existing", data_schema=schema, errors=errors
         )
 
     async def async_step_profiles(
@@ -256,6 +371,8 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         """Start re-authentication after the console rejected the credentials."""
+        if CONF_SOURCE_ENTRY_ID in entry_data:
+            return self.async_abort(reason="repair_source")
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -271,7 +388,8 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
                     entry.data[CONF_HOST],
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
-                    entry.data[CONF_VERIFY_SSL],
+                    True,
+                    entry.data.get(CONF_CERTIFICATE_FINGERPRINT),
                 )
             except CannotValidate as err:
                 errors["base"] = err.error
@@ -296,22 +414,30 @@ class UniFiAlarmConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Change the host or SSL verification of the same console."""
         entry = self._get_reconfigure_entry()
+        if CONF_SOURCE_ENTRY_ID in entry.data:
+            return await self.async_step_existing(user_input)
         errors: dict[str, str] = {}
         if user_input is not None:
-            updates = {
-                CONF_HOST: normalize_host(user_input[CONF_HOST]),
-                CONF_VERIFY_SSL: user_input[CONF_VERIFY_SSL],
-            }
             try:
+                updates = {
+                    CONF_HOST: normalize_host(user_input[CONF_HOST]),
+                    CONF_VERIFY_SSL: True,
+                    CONF_CERTIFICATE_FINGERPRINT: normalize_fingerprint(
+                        user_input.get(CONF_CERTIFICATE_FINGERPRINT, "")
+                    ),
+                }
                 console, _ = await async_validate_connection(
                     self.hass,
                     updates[CONF_HOST],
                     entry.data[CONF_USERNAME],
                     entry.data[CONF_PASSWORD],
                     updates[CONF_VERIFY_SSL],
+                    updates[CONF_CERTIFICATE_FINGERPRINT],
                 )
             except CannotValidate as err:
                 errors["base"] = err.error
+            except ValueError:
+                errors["base"] = "invalid_host"
             else:
                 await self.async_set_unique_id(format_mac(console.mac))
                 self._abort_if_unique_id_mismatch()

@@ -23,7 +23,7 @@ async def async_get_config_entry_diagnostics(
     coordinator = entry.runtime_data
     listener = coordinator.listener
     console = coordinator.console
-    interval = coordinator.update_interval
+    interval = coordinator.poll_interval
     return async_redact_data(
         {
             "entry": {"data": dict(entry.data), "options": dict(entry.options)},
@@ -39,9 +39,9 @@ async def async_get_config_entry_diagnostics(
                 for profile_id, profile in (coordinator.data or {}).items()
             },
             "push": {
-                "connected": listener.connected,
-                "last_message_at": _iso(listener.last_message_at),
-                "reconnect_count": listener.reconnect_count,
+                "connected": bool(listener and listener.connected),
+                "last_message_at": _iso(listener.last_message_at) if listener else None,
+                "reconnect_count": listener.reconnect_count if listener else 0,
             },
             "polling": {
                 "update_interval_seconds": (

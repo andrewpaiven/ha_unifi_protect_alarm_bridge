@@ -12,6 +12,7 @@ import binascii
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import ssl
 from typing import Any
 
 import aiohttp
@@ -172,9 +173,13 @@ class UniFiAlarmClient:
         password: str,
         *,
         scheme: str = "https",
+        ssl_context: ssl.SSLContext | aiohttp.Fingerprint | None = None,
     ) -> None:
         """Store connection details. `session` must use CookieJar(unsafe=True)."""
         self._session = session
+        if scheme == "https" and ssl_context is None:
+            raise ValueError("HTTPS requires an explicit verified SSL context or pin")
+        self.ssl = ssl_context if ssl_context is not None else True
         self._base_url = f"{scheme}://{host}"
         self._ws_base_url = f"{'wss' if scheme == 'https' else 'ws'}://{host}"
         self._username = username
@@ -219,6 +224,8 @@ class UniFiAlarmClient:
                         "rememberMe": True,
                     },
                     timeout=REQUEST_TIMEOUT,
+                    allow_redirects=False,
+                    ssl=self.ssl,
                 ) as resp:
                     status = resp.status
                     header_token = resp.headers.get(
@@ -265,7 +272,12 @@ class UniFiAlarmClient:
             headers["X-CSRF-Token"] = self._csrf_token
         try:
             async with self._session.request(
-                method, self._base_url + path, headers=headers, timeout=REQUEST_TIMEOUT
+                method,
+                self._base_url + path,
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+                allow_redirects=False,
+                ssl=self.ssl,
             ) as resp:
                 if updated := resp.headers.get("X-Updated-CSRF-Token"):
                     self._csrf_token = updated
