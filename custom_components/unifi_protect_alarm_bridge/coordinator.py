@@ -107,7 +107,8 @@ class UniFiAlarmCoordinator(DataUpdateCoordinator[dict[str, ArmProfile]]):
             config_entry=entry,
             name=DOMAIN,
             update_interval=None,
-            always_update=False,
+            # Poll freshness is an entity attribute even when profiles are equal.
+            always_update=True,
         )
         self.client = client
         self.console = console

@@ -13,5 +13,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/andrewpaiven/ha_unifi_protect_alarm_bridge/issues",
   "requirements": [],
-  "version": "1.1.0"
+  "version": "1.1.1"
 }
